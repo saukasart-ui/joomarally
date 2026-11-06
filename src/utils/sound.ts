@@ -7,8 +7,22 @@ class SoundEngine {
   private muted: boolean = false;
   private initialized: boolean = false;
 
+  // Background music ("Kräki Kevin - Punane Škoda" synth track + optional custom MP3 override)
+  private bgmTimer: number | null = null;
+  private bgmStep: number = 0;
+  private customAudio: HTMLAudioElement | null = null;
+  private usingCustomAudio: boolean = false;
+
   public init() {
-    if (this.initialized) return;
+    if (this.initialized) {
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+      if (this.usingCustomAudio && this.customAudio && !this.muted && this.customAudio.paused) {
+        this.customAudio.play().catch(() => {});
+      }
+      return;
+    }
     try {
       const AudioCtx =
         window.AudioContext ||
@@ -65,15 +79,126 @@ class SoundEngine {
       whiteNoise.start();
 
       this.initialized = true;
+      this.startBackgroundMusic();
     } catch {
       // Ignore if audio is blocked
     }
+  }
+
+  public loadCustomTrackFile(file: File) {
+    this.init();
+    const url = URL.createObjectURL(file);
+    if (this.customAudio) {
+      this.customAudio.pause();
+    }
+    const audio = new Audio(url);
+    audio.loop = true;
+    audio.volume = 0.55;
+    this.customAudio = audio;
+    this.usingCustomAudio = true;
+    if (!this.muted) {
+      audio.play().catch(() => {});
+    }
+  }
+
+  private startBackgroundMusic() {
+    if (this.bgmTimer !== null) return;
+    // 140 BPM energetic rally-house / euro-rave beat ("Punane Škoda" vibe)
+    const stepMs = (60 / 140 / 4) * 1000; // 16th note ~ 107ms
+    this.bgmTimer = window.setInterval(() => {
+      if (this.muted || !this.ctx || this.usingCustomAudio) return;
+      if (this.ctx.state === 'suspended') return;
+
+      const s = this.bgmStep % 32;
+      this.bgmStep = (this.bgmStep + 1) % 64;
+      const now = this.ctx.currentTime;
+
+      // 1. Punchy 4-on-the-floor Kick on 0, 4, 8, 12, 16, 20, 24, 28
+      if (s % 4 === 0) {
+        const kickOsc = this.ctx.createOscillator();
+        const kickGain = this.ctx.createGain();
+        kickOsc.type = 'sine';
+        kickOsc.frequency.setValueAtTime(135, now);
+        kickOsc.frequency.exponentialRampToValueAtTime(38, now + 0.11);
+
+        kickGain.gain.setValueAtTime(0.16, now);
+        kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+        kickOsc.connect(kickGain);
+        kickGain.connect(this.ctx.destination);
+        kickOsc.start(now);
+        kickOsc.stop(now + 0.15);
+      }
+
+      // 2. Off-beat Donk / Rally Bass on 2, 6, 10, 14, 18, 22, 26, 30
+      if (s % 4 === 2) {
+        const bassNotes = [
+          110.0, 110.0, 130.81, 130.81,
+          146.83, 146.83, 130.81, 164.81,
+        ];
+        const bFreq = bassNotes[Math.floor(s / 4) % bassNotes.length];
+        const donkOsc = this.ctx.createOscillator();
+        const donkFilter = this.ctx.createBiquadFilter();
+        const donkGain = this.ctx.createGain();
+
+        donkOsc.type = 'sawtooth';
+        donkOsc.frequency.setValueAtTime(bFreq * 1.6, now);
+        donkOsc.frequency.exponentialRampToValueAtTime(bFreq, now + 0.06);
+
+        donkFilter.type = 'bandpass';
+        donkFilter.frequency.setValueAtTime(420, now);
+        donkFilter.Q.value = 2.6;
+
+        donkGain.gain.setValueAtTime(0.11, now);
+        donkGain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+
+        donkOsc.connect(donkFilter);
+        donkFilter.connect(donkGain);
+        donkGain.connect(this.ctx.destination);
+        donkOsc.start(now);
+        donkOsc.stop(now + 0.14);
+      }
+
+      // 3. Catchy "Punane Škoda" Lead Synth Melody (A minor euro-rally hook)
+      const leadPattern: (number | null)[] = [
+        440.0, null, 523.25, 440.0, 587.33, null, 523.25, null,
+        659.25, null, 587.33, 523.25, 493.88, null, 440.0, 392.0,
+        440.0, null, 523.25, 440.0, 659.25, null, 587.33, null,
+        783.99, null, 659.25, 587.33, 523.25, 493.88, 440.0, null,
+      ];
+      const leadFreq = leadPattern[s];
+      if (leadFreq !== null) {
+        const leadOsc = this.ctx.createOscillator();
+        const leadFilter = this.ctx.createBiquadFilter();
+        const leadGain = this.ctx.createGain();
+
+        leadOsc.type = 'square';
+        leadOsc.frequency.setValueAtTime(leadFreq, now);
+
+        leadFilter.type = 'lowpass';
+        leadFilter.frequency.setValueAtTime(1650, now);
+
+        leadGain.gain.setValueAtTime(0.048, now);
+        leadGain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+
+        leadOsc.connect(leadFilter);
+        leadFilter.connect(leadGain);
+        leadGain.connect(this.ctx.destination);
+        leadOsc.start(now);
+        leadOsc.stop(now + 0.12);
+      }
+    }, stepMs);
   }
 
   public setMuted(mute: boolean) {
     this.muted = mute;
     if (mute) {
       this.stopContinuous();
+      if (this.customAudio) {
+        this.customAudio.pause();
+      }
+    } else if (this.usingCustomAudio && this.customAudio) {
+      this.customAudio.play().catch(() => {});
     }
   }
 

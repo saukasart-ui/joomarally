@@ -14,6 +14,8 @@ import {
   buildFriendsBench,
   buildGateArch,
   buildHillyTerrainMesh,
+  buildJakobSpot,
+  buildLaureenSpot,
   buildRoadRibbonMesh,
   buildSceneryMeshes,
   createSportsBallPool,
@@ -22,6 +24,8 @@ import { buildCarModel3D, createCarEnvironmentTexture, type Car3D } from './util
 import { CarPreview3D } from './components/CarPreview3D';
 import { sound } from './utils/sound';
 import nadimKertHansImg from './assets/nadim_kert_hans.jpg';
+import jakobImg from './assets/jakob.jpg';
+import laureenImg from './assets/laureen.jpg';
 
 type ScreenState = 'menu' | 'car_select' | 'racing' | 'finished';
 
@@ -29,6 +33,9 @@ interface PlayerPhysicsState {
   crashed: boolean;
   tooGoodPause: boolean;
   hitFriendsCrash: boolean;
+  hitJakobCrash: boolean;
+  hitLaureenCrash: boolean;
+  jakobSpeedEffect: boolean;
   sabotaged: boolean;
   sabotageTimerMs: number;
   cleanDriveMs: number;
@@ -93,6 +100,9 @@ function createInitialPlayerState(
     crashed: false,
     tooGoodPause: false,
     hitFriendsCrash: false,
+    hitJakobCrash: false,
+    hitLaureenCrash: false,
+    jakobSpeedEffect: false,
     sabotaged: false,
     sabotageTimerMs: 0,
     cleanDriveMs: 0,
@@ -144,6 +154,10 @@ export function App() {
   const [p2TooGood, setP2TooGood] = useState<boolean>(false);
   const [p1HitFriends, setP1HitFriends] = useState<boolean>(false);
   const [p2HitFriends, setP2HitFriends] = useState<boolean>(false);
+  const [p1HitJakob, setP1HitJakob] = useState<boolean>(false);
+  const [p2HitJakob, setP2HitJakob] = useState<boolean>(false);
+  const [p1HitLaureen, setP1HitLaureen] = useState<boolean>(false);
+  const [p2HitLaureen, setP2HitLaureen] = useState<boolean>(false);
   const [p1Drunk, setP1Drunk] = useState<number>(0);
   const [p2Drunk, setP2Drunk] = useState<number>(0);
 
@@ -254,6 +268,10 @@ export function App() {
     setP2TooGood(false);
     setP1HitFriends(false);
     setP2HitFriends(false);
+    setP1HitJakob(false);
+    setP2HitJakob(false);
+    setP1HitLaureen(false);
+    setP2HitLaureen(false);
     setP1Drunk(0);
     setP2Drunk(0);
     setWinner(null);
@@ -267,14 +285,17 @@ export function App() {
     const p = playerNum === 1 ? g.p1 : g.p2;
     if (!p.crashed && !p.tooGoodPause) return;
 
-    const indexJump = p.hitFriendsCrash ? 10 : 0;
+    const indexJump =
+      p.hitFriendsCrash || p.hitJakobCrash || p.hitLaureenCrash ? 10 : 0;
     const safeIdx = Math.min(track.points.length - 6, Math.max(2, p.trackIndex + indexJump));
     const centerPt = track.points[safeIdx];
 
-    p.drunkLevel += 1;
+    p.drunkLevel += p.hitLaureenCrash ? 2 : 1;
     p.crashed = false;
     p.tooGoodPause = false;
     p.hitFriendsCrash = false;
+    p.hitJakobCrash = false;
+    p.hitLaureenCrash = false;
     p.cleanDriveMs = 0;
     p.carX = centerPt.x;
     p.carY = centerPt.y;
@@ -300,11 +321,15 @@ export function App() {
       setP1Crashed(false);
       setP1TooGood(false);
       setP1HitFriends(false);
+      setP1HitJakob(false);
+      setP1HitLaureen(false);
     } else {
       setP2Drunk(p.drunkLevel);
       setP2Crashed(false);
       setP2TooGood(false);
       setP2HitFriends(false);
+      setP2HitJakob(false);
+      setP2HitLaureen(false);
     }
   };
 
@@ -459,9 +484,8 @@ export function App() {
       powerPreference: 'high-performance',
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = false;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     container.innerHTML = '';
@@ -475,18 +499,8 @@ export function App() {
 
     const dirLight = new THREE.DirectionalLight(0xffe4b5, 1.45);
     dirLight.position.set(400, 900, 350);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 1024;
-    dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 100;
-    dirLight.shadow.camera.far = 2600;
-    const d = 460;
-    dirLight.shadow.camera.left = -d;
-    dirLight.shadow.camera.right = d;
-    dirLight.shadow.camera.top = d;
-    dirLight.shadow.camera.bottom = -d;
+    dirLight.castShadow = false;
     scene.add(dirLight);
-    scene.add(dirLight.target);
 
     scene.add(buildHillyTerrainMesh(track.points));
     scene.add(buildRoadRibbonMesh(track.points));
@@ -497,6 +511,14 @@ export function App() {
     // Nadim, Kert & Hans sitting on a roadside bench watching the rally
     const friendsBench = buildFriendsBench(track.points, nadimKertHansImg);
     scene.add(friendsBench.group);
+
+    // Jakob lying on the roadside further along the stage
+    const jakobSpot = buildJakobSpot(track.points, jakobImg);
+    scene.add(jakobSpot.group);
+
+    // Laureen standing on the roadside further along the stage
+    const laureenSpot = buildLaureenSpot(track.points, laureenImg);
+    scene.add(laureenSpot.group);
 
     // Pool of 3D footballs and basketballs for sabotage after hitting Nadim, Kert & Hans
     interface RollingBall {
@@ -678,7 +700,14 @@ export function App() {
         }
       }
 
-      const maxSpeed = 615;
+      // If player hit Jakob: faster in singleplayer (rushing to EMO!), slower in split screen
+      const jakobSpeedMult = p.jakobSpeedEffect
+        ? gameRef.current.mode === 'time_attack'
+          ? 1.32
+          : 0.72
+        : 1.0;
+
+      const maxSpeed = 615 * jakobSpeedMult;
       const reverseMax = -190;
       const speedNorm = Math.min(1, Math.abs(p.speed) / maxSpeed);
 
@@ -686,7 +715,7 @@ export function App() {
 
       if (!p.isAirborne) {
         if (p.keys.up) {
-          accel += 485 * (1 - speedNorm * 0.35);
+          accel += 485 * jakobSpeedMult * (1 - speedNorm * 0.35);
         } else if (p.keys.down) {
           if (p.speed > 12) {
             accel -= 550;
@@ -710,13 +739,13 @@ export function App() {
       }
       p.speed = Math.max(reverseMax, Math.min(maxSpeed, p.speed));
 
-      // Smooth low-frequency drunk steering drift (+2% extra wobble)
+      // Gentler, smooth low-frequency drunk steering drift
       let steerInput = (p.keys.right ? 1 : 0) - (p.keys.left ? 1 : 0);
-      if (p.drunkLevel > 0 && Math.abs(p.speed) > 35) {
-        const wobbleAmp = Math.min(0.42, p.drunkLevel * 0.06);
+      if (p.drunkLevel > 0 && Math.abs(p.speed) > 40) {
+        const wobbleAmp = Math.min(0.18, p.drunkLevel * 0.024);
         steerInput +=
-          Math.sin(now * 0.0025 + playerNum) * wobbleAmp +
-          Math.cos(now * 0.0016) * (wobbleAmp * 0.55);
+          Math.sin(now * 0.002 + playerNum) * wobbleAmp +
+          Math.cos(now * 0.0013) * (wobbleAmp * 0.45);
       }
 
       p.steerAngle += (steerInput - p.steerAngle) * (1 - Math.exp(-11 * dt));
@@ -842,6 +871,67 @@ export function App() {
         }
       }
 
+      // Check collision with Nadim, Kert & Hans sitting on their bench
+      const distToFriends = Math.hypot(p.carX - friendsBench.x, p.carY - friendsBench.z);
+      if (!p.hitFriendsCrash && distToFriends < friendsBench.hitRadius) {
+        p.crashed = true;
+        p.hitFriendsCrash = true;
+        p.sabotaged = true;
+        // First ball wave rolls out ~2.5s after resuming, then every 20 seconds
+        p.sabotageTimerMs = 17500;
+        p.cleanDriveMs = 0;
+        p.speed = 0;
+        p.slipAngle = 0;
+        sound.playCrash();
+        if (playerNum === 1) {
+          setP1HitFriends(true);
+          setP1Crashed(true);
+        } else {
+          setP2HitFriends(true);
+          setP2Crashed(true);
+        }
+        return { speedNorm: 0, slipAmount: 0 };
+      }
+
+      // Check collision with Jakob on the roadside
+      const distToJakob = Math.hypot(p.carX - jakobSpot.x, p.carY - jakobSpot.z);
+      if (!p.hitJakobCrash && distToJakob < jakobSpot.hitRadius) {
+        p.crashed = true;
+        p.hitJakobCrash = true;
+        p.jakobSpeedEffect = true;
+        p.cleanDriveMs = 0;
+        p.speed = 0;
+        p.slipAngle = 0;
+        sound.playCrash();
+        if (playerNum === 1) {
+          setP1HitJakob(true);
+          setP1Crashed(true);
+        } else {
+          setP2HitJakob(true);
+          setP2Crashed(true);
+        }
+        return { speedNorm: 0, slipAmount: 0 };
+      }
+
+      // Check collision with Laureen on the roadside
+      const distToLaureen = Math.hypot(p.carX - laureenSpot.x, p.carY - laureenSpot.z);
+      if (!p.hitLaureenCrash && distToLaureen < laureenSpot.hitRadius) {
+        p.crashed = true;
+        p.hitLaureenCrash = true;
+        p.cleanDriveMs = 0;
+        p.speed = 0;
+        p.slipAngle = 0;
+        sound.playCrash();
+        if (playerNum === 1) {
+          setP1HitLaureen(true);
+          setP1Crashed(true);
+        } else {
+          setP2HitLaureen(true);
+          setP2Crashed(true);
+        }
+        return { speedNorm: 0, slipAmount: 0 };
+      }
+
       // Check Finish Line
       if (p.trackIndex >= track.points.length - 5) {
         gameRef.current.screen = 'finished';
@@ -894,8 +984,8 @@ export function App() {
             dateStr: nowStr,
           });
         }
-      } else if (minDist > ROAD_HALF_WIDTH) {
-        // Off-road Crash!
+      } else if (minDist > ROAD_HALF_WIDTH + 30) {
+        // Off-road Crash (with forgiving 30-unit shoulder margin so slight edge clips don't crash!)
         p.crashed = true;
         p.cleanDriveMs = 0;
         p.speed = 0;
@@ -903,6 +993,9 @@ export function App() {
         sound.playCrash();
         if (playerNum === 1) setP1Crashed(true);
         else setP2Crashed(true);
+      } else if (minDist > ROAD_HALF_WIDTH && !p.isAirborne) {
+        // Gentle shoulder gravel drag when wheels touch the outer shoulder
+        p.speed *= Math.exp(-1.4 * dt);
       }
 
       return { speedNorm: p.speed / maxSpeed, slipAmount };
@@ -925,7 +1018,7 @@ export function App() {
       carMesh.rearLeftWheel.rotation.set(0, 0, p.keys.handbrake ? 0 : -p.wheelRotation);
       carMesh.rearRightWheel.rotation.set(0, 0, p.keys.handbrake ? 0 : -p.wheelRotation);
 
-      // Jitter-Free Helicopter Camera with +2% smooth drunk oscillation (võnkumine)
+      // Jitter-Free Helicopter Camera with gentle drunk sway
       const angleDiff = shortestAngleDiff(p.camAngle, p.velAngle);
       p.camAngle += angleDiff * (1 - Math.exp(-5.5 * dt));
       p.camBaseH += (p.carH - p.camBaseH) * (1 - Math.exp(-8.0 * dt));
@@ -933,21 +1026,16 @@ export function App() {
       let drunkAngleSway = 0;
       let drunkRoll = 0;
       let drunkPitchSway = 0;
-      let drunkFovWobble = 0;
 
       if (p.drunkLevel > 0) {
         drunkAngleSway =
-          Math.sin(now * 0.0019 + playerSeed) * Math.min(0.32, p.drunkLevel * 0.052);
+          Math.sin(now * 0.0015 + playerSeed) * Math.min(0.14, p.drunkLevel * 0.02);
         drunkRoll =
-          Math.cos(now * 0.0021 + playerSeed) * Math.min(0.34, p.drunkLevel * 0.055);
+          Math.cos(now * 0.0017 + playerSeed) * Math.min(0.14, p.drunkLevel * 0.02);
         drunkPitchSway =
-          Math.sin(now * 0.0024 + playerSeed) * Math.min(18, p.drunkLevel * 3.0);
-        // 2% smooth viewport oscillation per drink
-        drunkFovWobble =
-          Math.sin(now * 0.0028 + playerSeed) * Math.min(6, 50 * 0.02 * p.drunkLevel);
+          Math.sin(now * 0.0019 + playerSeed) * Math.min(8, p.drunkLevel * 1.2);
       }
 
-      cam.fov = 50 + drunkFovWobble;
       const effectiveCamAngle = p.camAngle + drunkAngleSway;
       const camDist = 150;
       const camHeightOffset = 80;
@@ -1040,6 +1128,61 @@ export function App() {
         (dItem.mesh.material as THREE.MeshLambertMaterial).opacity = (1 - progress) * 0.58;
       }
 
+      // Update sabotage footballs & basketballs rolling across the road
+      const activePlayers =
+        g.mode === 'split_screen' ? [g.p1, g.p2] : [g.p1];
+      for (const b of rollingBalls) {
+        if (!b.active) continue;
+        b.life += dt;
+        if (b.life > 8.5) {
+          b.active = false;
+          b.mesh.visible = false;
+          continue;
+        }
+
+        b.x += b.vx * dt;
+        b.z += b.vz * dt;
+
+        if (b.hit) {
+          b.y += b.vy * dt;
+          b.vy -= 260 * dt;
+          if (b.y < b.baseH + 9.5) {
+            b.y = b.baseH + 9.5;
+            b.vy = Math.abs(b.vy) * 0.55;
+          }
+        } else {
+          b.y = b.baseH + 9.5 + Math.abs(Math.sin(now * 0.009 + b.x * 0.02)) * 4.5;
+
+          // Check collision with active cars -> car swerves/tilts ("auto kaldub natuke")
+          for (const pl of activePlayers) {
+            if (pl.crashed || pl.tooGoodPause) continue;
+            const dCar = Math.hypot(pl.carX - b.x, pl.carY - b.z);
+            if (dCar < 25) {
+              b.hit = true;
+              b.vy = 95;
+              b.vx += Math.cos(pl.carAngle) * 260;
+              b.vz += Math.sin(pl.carAngle) * 260;
+
+              const sideDot =
+                (b.x - pl.carX) * -Math.sin(pl.carAngle) +
+                (b.z - pl.carY) * Math.cos(pl.carAngle);
+              const pushDir = sideDot >= 0 ? -1 : 1;
+              pl.moveAngle += pushDir * 0.28;
+              pl.velAngle += pushDir * 0.2;
+              pl.slipAngle += pushDir * 0.36;
+              pl.suspensionRoll = -pushDir * 0.16;
+              pl.suspensionBounce = -2.1;
+              pl.speed *= 0.84;
+              sound.playCrash();
+            }
+          }
+        }
+
+        b.mesh.position.set(b.x, b.y, b.z);
+        b.mesh.rotation.x += (b.vz / 9.5) * dt;
+        b.mesh.rotation.z -= (b.vx / 9.5) * dt;
+      }
+
       updateMeshAndCamera(g.p1, car1Mesh, cam1, dt, now, 0);
       if (g.mode === 'split_screen' && car2Mesh) {
         updateMeshAndCamera(g.p2, car2Mesh, cam2, dt, now, 3.14);
@@ -1052,12 +1195,10 @@ export function App() {
       if (g.mode === 'time_attack') {
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, w, h);
-        cam1.aspect = w / h;
-        cam1.updateProjectionMatrix();
-
-        dirLight.position.set(g.p1.carX + 350, g.p1.carH + 800, g.p1.carY + 300);
-        dirLight.target.position.set(g.p1.carX, g.p1.carH, g.p1.carY);
-
+        if (Math.abs(cam1.aspect - w / h) > 0.001) {
+          cam1.aspect = w / h;
+          cam1.updateProjectionMatrix();
+        }
         renderer.render(scene, cam1);
       } else {
         const halfW = Math.floor(w / 2);
@@ -1066,19 +1207,19 @@ export function App() {
         // Left Half: Player 1 (WASD)
         renderer.setViewport(0, 0, halfW, h);
         renderer.setScissor(0, 0, halfW, h);
-        cam1.aspect = halfW / h;
-        cam1.updateProjectionMatrix();
-        dirLight.position.set(g.p1.carX + 350, g.p1.carH + 800, g.p1.carY + 300);
-        dirLight.target.position.set(g.p1.carX, g.p1.carH, g.p1.carY);
+        if (Math.abs(cam1.aspect - halfW / h) > 0.001) {
+          cam1.aspect = halfW / h;
+          cam1.updateProjectionMatrix();
+        }
         renderer.render(scene, cam1);
 
         // Right Half: Player 2 (Arrows)
         renderer.setViewport(halfW, 0, w - halfW, h);
         renderer.setScissor(halfW, 0, w - halfW, h);
-        cam2.aspect = (w - halfW) / h;
-        cam2.updateProjectionMatrix();
-        dirLight.position.set(g.p2.carX + 350, g.p2.carH + 800, g.p2.carY + 300);
-        dirLight.target.position.set(g.p2.carX, g.p2.carH, g.p2.carY);
+        if (Math.abs(cam2.aspect - (w - halfW) / h) > 0.001) {
+          cam2.aspect = (w - halfW) / h;
+          cam2.updateProjectionMatrix();
+        }
         renderer.render(scene, cam2);
       }
 
@@ -1095,29 +1236,31 @@ export function App() {
     };
   }, [screen, mode, p1Car, p2Car, track]);
 
-  // 10% less blur than before (1.035px per drink instead of 1.15px)
-  const p1BlurPx = p1Drunk > 0 ? Math.min(7.65, p1Drunk * 1.035) : 0;
-  const p2BlurPx = p2Drunk > 0 ? Math.min(7.65, p2Drunk * 1.035) : 0;
+  // Gentler optical blur (0.45px per drink, capped at 3.2px) without transforming the WebGL canvas
+  const p1BlurPx = p1Drunk > 0 ? Math.min(3.2, p1Drunk * 0.45) : 0;
+  const p2BlurPx = p2Drunk > 0 ? Math.min(3.2, p2Drunk * 0.45) : 0;
 
   const p1CarOption = CAR_OPTIONS.find((c) => c.id === p1Car)!;
   const p2CarOption = CAR_OPTIONS.find((c) => c.id === p2Car)!;
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-stone-950 font-sans select-none">
-      {/* 3D WebGL Canvas Mount */}
-      <div
-        ref={mountRef}
-        className={`w-full h-full ${mode === 'time_attack' && p1Drunk > 0 ? 'drunk-view' : ''}`}
-        style={
-          mode === 'time_attack' && p1BlurPx > 0
-            ? ({
-                filter: `blur(${p1BlurPx.toFixed(2)}px) saturate(${100 + Math.min(90, p1Drunk * 14)}%)`,
-                '--sway-deg': `${Math.min(3.5, p1Drunk * 0.55).toFixed(2)}deg`,
-                '--sway-scale': `${(1 + Math.min(0.08, p1Drunk * 0.02)).toFixed(3)}`,
-              } as React.CSSProperties)
-            : undefined
-        }
-      />
+    <div
+      onClick={() => sound.init()}
+      className="relative w-screen h-screen overflow-hidden bg-stone-950 font-sans select-none"
+    >
+      {/* 3D WebGL Canvas Mount — zero CSS filter/transform on the canvas itself for 60fps smoothness */}
+      <div ref={mountRef} className="w-full h-full" />
+
+      {/* SINGLEPLAYER GENTLE OPTICAL BLUR OVERLAY */}
+      {(screen === 'racing' || screen === 'finished') && mode === 'time_attack' && p1BlurPx > 0 && (
+        <div
+          className="pointer-events-none fixed inset-0"
+          style={{
+            backdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
+            WebkitBackdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
+          }}
+        />
+      )}
 
       {/* SPLIT-SCREEN OPTICAL BLUR OVERLAYS & CENTER DIVIDER */}
       {(screen === 'racing' || screen === 'finished') && mode === 'split_screen' && (
@@ -1127,8 +1270,8 @@ export function App() {
             <div
               className="pointer-events-none fixed top-0 bottom-0 left-0 w-1/2"
               style={{
-                backdropFilter: `blur(${p1BlurPx.toFixed(2)}px) saturate(${100 + Math.min(90, p1Drunk * 14)}%)`,
-                WebkitBackdropFilter: `blur(${p1BlurPx.toFixed(2)}px) saturate(${100 + Math.min(90, p1Drunk * 14)}%)`,
+                backdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
+                WebkitBackdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
               }}
             />
           )}
@@ -1138,8 +1281,8 @@ export function App() {
             <div
               className="pointer-events-none fixed top-0 bottom-0 right-0 w-1/2"
               style={{
-                backdropFilter: `blur(${p2BlurPx.toFixed(2)}px) saturate(${100 + Math.min(90, p2Drunk * 14)}%)`,
-                WebkitBackdropFilter: `blur(${p2BlurPx.toFixed(2)}px) saturate(${100 + Math.min(90, p2Drunk * 14)}%)`,
+                backdropFilter: `blur(${p2BlurPx.toFixed(2)}px)`,
+                WebkitBackdropFilter: `blur(${p2BlurPx.toFixed(2)}px)`,
               }}
             />
           )}
@@ -1288,9 +1431,40 @@ export function App() {
                 <h1 className="text-5xl font-black tracking-tight text-white">
                   {GAME_TEXT.title}
                 </h1>
-                <p className="text-stone-400 font-medium text-sm mt-1">
-                  {GAME_TEXT.subtitle}
-                </p>
+                <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                  <p className="text-stone-400 font-medium text-sm">
+                    {GAME_TEXT.subtitle}
+                  </p>
+                  <label
+                    title="Kliki, kui soovid valida arvutist oma MP3 faili"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-2.5 py-1 rounded-full transition cursor-pointer"
+                  >
+                    <span>🎵 Kräki Kevin – Punane Škoda</span>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) sound.loadCustomTrackFile(file);
+                      }}
+                    />
+                  </label>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMute();
+                    }}
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 transition cursor-pointer"
+                    title={muted ? 'Heli sisse' : 'Heli välja'}
+                  >
+                    {muted ? (
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Mode Selector + Big START Button */}
@@ -1568,23 +1742,24 @@ export function App() {
         </div>
       )}
 
-      {/* 3. CRASH & 25s "TOO GOOD" OVERLAYS — exact text & per-side continue keys */}
+      {/* 3. CRASH, NADIM/KERT/HANS, JAKOB, LAUREEN & 25s "TOO GOOD" OVERLAYS */}
       {screen === 'racing' && mode === 'time_attack' && (p1Crashed || p1TooGood) && (
         <div
           className={`fixed inset-0 flex items-center justify-center ${
             p1TooGood ? 'bg-amber-950/85' : 'bg-red-950/85'
           } backdrop-blur-md px-6 z-30`}
         >
-          <div className="max-w-2xl w-full text-center flex flex-col items-center">
-            {p1TooGood && (
-              <img
-                src={jooVeidiImg}
-                alt="Joo veidi"
-                className="w-56 h-56 object-cover rounded-2xl border-2 border-amber-400/60 shadow-2xl mb-6"
-              />
-            )}
-            <h2 className="text-4xl md:text-6xl font-black text-white tracking-tight leading-tight drop-shadow-lg mb-8">
-              {p1TooGood ? GAME_TEXT.tooGoodTitle : GAME_TEXT.crashTitle}
+          <div className="max-w-3xl w-full text-center flex flex-col items-center">
+            <h2 className="text-3xl md:text-5xl font-black text-white tracking-tight leading-tight drop-shadow-lg mb-8">
+              {p1TooGood
+                ? GAME_TEXT.tooGoodTitle
+                : p1HitLaureen
+                ? GAME_TEXT.hitLaureenTitle
+                : p1HitJakob
+                ? GAME_TEXT.hitJakobTitle
+                : p1HitFriends
+                ? GAME_TEXT.hitFriendsTitle
+                : GAME_TEXT.crashTitle}
             </h2>
             <p className="text-xl font-bold text-amber-200 tracking-wide animate-pulse">
               {GAME_TEXT.crashContinueEnter}
@@ -1600,15 +1775,16 @@ export function App() {
           } backdrop-blur-md px-6 z-30`}
         >
           <div className="max-w-md w-full text-center flex flex-col items-center">
-            {p1TooGood && (
-              <img
-                src={jooVeidiImg}
-                alt="Joo veidi"
-                className="w-44 h-44 object-cover rounded-2xl border-2 border-amber-400/60 shadow-2xl mb-5"
-              />
-            )}
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-tight drop-shadow-lg mb-6">
-              {p1TooGood ? GAME_TEXT.tooGoodTitle : GAME_TEXT.crashTitle}
+            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-tight drop-shadow-lg mb-6">
+              {p1TooGood
+                ? GAME_TEXT.tooGoodTitle
+                : p1HitLaureen
+                ? GAME_TEXT.hitLaureenTitle
+                : p1HitJakob
+                ? GAME_TEXT.hitJakobTitle
+                : p1HitFriends
+                ? GAME_TEXT.hitFriendsTitle
+                : GAME_TEXT.crashTitle}
             </h2>
             <p className="text-lg font-bold text-amber-200 tracking-wide animate-pulse">
               {GAME_TEXT.crashContinueSpace}
@@ -1624,15 +1800,16 @@ export function App() {
           } backdrop-blur-md px-6 z-30`}
         >
           <div className="max-w-md w-full text-center flex flex-col items-center">
-            {p2TooGood && (
-              <img
-                src={jooVeidiImg}
-                alt="Joo veidi"
-                className="w-44 h-44 object-cover rounded-2xl border-2 border-amber-400/60 shadow-2xl mb-5"
-              />
-            )}
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-tight drop-shadow-lg mb-6">
-              {p2TooGood ? GAME_TEXT.tooGoodTitle : GAME_TEXT.crashTitle}
+            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-tight drop-shadow-lg mb-6">
+              {p2TooGood
+                ? GAME_TEXT.tooGoodTitle
+                : p2HitLaureen
+                ? GAME_TEXT.hitLaureenTitle
+                : p2HitJakob
+                ? GAME_TEXT.hitJakobTitle
+                : p2HitFriends
+                ? GAME_TEXT.hitFriendsTitle
+                : GAME_TEXT.crashTitle}
             </h2>
             <p className="text-lg font-bold text-amber-200 tracking-wide animate-pulse">
               {GAME_TEXT.crashContinueEnter}

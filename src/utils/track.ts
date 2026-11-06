@@ -56,7 +56,7 @@ export function sampleTerrainHeight(x: number, y: number, points: SplinePoint[])
   let minDistSq = Infinity;
   let nearestH = 0;
 
-  for (let i = 0; i < points.length; i += 4) {
+  for (let i = 0; i < points.length; i += 14) {
     const pt = points[i];
     const dx = x - pt.x;
     const dy = y - pt.y;
@@ -68,24 +68,24 @@ export function sampleTerrainHeight(x: number, y: number, points: SplinePoint[])
   }
 
   const dist = Math.sqrt(minDistSq);
-  const roadEdge = ROAD_HALF_WIDTH + 30;
+  const roadEdge = ROAD_HALF_WIDTH + 34;
   if (dist <= roadEdge) {
     return nearestH - 0.5;
   }
 
   // Smooth, broad rolling hills away from the road
-  const blend = Math.min(1, (dist - roadEdge) / 480);
+  const blend = Math.min(1, (dist - roadEdge) / 540);
   const smoothBlend = blend * blend * (3 - 2 * blend);
   const hillNoise =
-    Math.sin(x * 0.0014) * Math.cos(y * 0.0014) * 48 +
-    Math.cos(x * 0.0009 - y * 0.0011) * 34;
+    Math.sin(x * 0.0012) * Math.cos(y * 0.0012) * 38 +
+    Math.cos(x * 0.0008 - y * 0.0009) * 26;
 
   return nearestH * (1 - smoothBlend * 0.6) + hillNoise * smoothBlend;
 }
 
 /**
  * Continuously interpolates the road height, slope pitch, and distance from road center
- * without any discrete segment snapping.
+ * without any discrete segment snapping or false off-road triggers.
  */
 export function sampleRoadSurface(
   carX: number,
@@ -98,8 +98,8 @@ export function sampleRoadSurface(
   roadH: number;
   roadPitch: number;
 } {
-  const searchStart = Math.max(0, hintIdx - 45);
-  const searchEnd = Math.min(points.length - 1, hintIdx + 75);
+  const searchStart = Math.max(0, hintIdx - 65);
+  const searchEnd = Math.min(points.length - 1, hintIdx + 115);
   let bestIdx = hintIdx;
   let minDistSq = Infinity;
 
@@ -111,6 +111,32 @@ export function sampleRoadSurface(
     if (dSq < minDistSq) {
       minDistSq = dSq;
       bestIdx = i;
+    }
+  }
+
+  // Fallback global search if local window was exceeded so car never false-crashes
+  if (minDistSq > ROAD_HALF_WIDTH * ROAD_HALF_WIDTH) {
+    for (let i = 0; i < points.length; i += 2) {
+      const pt = points[i];
+      const dx = carX - pt.x;
+      const dy = carY - pt.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq < minDistSq) {
+        minDistSq = dSq;
+        bestIdx = i;
+      }
+    }
+    const refineStart = Math.max(0, bestIdx - 2);
+    const refineEnd = Math.min(points.length - 1, bestIdx + 2);
+    for (let i = refineStart; i <= refineEnd; i++) {
+      const pt = points[i];
+      const dx = carX - pt.x;
+      const dy = carY - pt.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq < minDistSq) {
+        minDistSq = dSq;
+        bestIdx = i;
+      }
     }
   }
 
@@ -134,7 +160,6 @@ export function sampleRoadSurface(
   let t = Math.max(0, Math.min(1, tF));
 
   if (tF < 0 && idx0 < idx1) {
-    // Car is on the previous segment (p0 -> p1)
     const dxB = p1.x - p0.x;
     const dyB = p1.y - p0.y;
     const lenSqB = dxB * dxB + dyB * dyB;
@@ -160,7 +185,7 @@ export function buildTrackSpline(ControlPoints: TrackPoint[] = STAGE_CONTROL_POI
   totalLength: number;
 } {
   const rawPoints: TrackPoint[] = [];
-  const stepsPerSegment = 32;
+  const stepsPerSegment = 24;
 
   for (let i = 0; i < ControlPoints.length - 1; i++) {
     const p0 = ControlPoints[Math.max(0, i - 1)];
@@ -175,9 +200,25 @@ export function buildTrackSpline(ControlPoints: TrackPoint[] = STAGE_CONTROL_POI
   }
   rawPoints.push(ControlPoints[ControlPoints.length - 1]);
 
-  // Multi-pass Gaussian smoothing on elevation `h` so hills & crests are 100% silky smooth
+  // 1. Horizontal (x, y) Gaussian smoothing so corners flow effortlessly with zero kinks
+  let xs = rawPoints.map((p) => p.x);
+  let ys = rawPoints.map((p) => p.y);
+  for (let pass = 0; pass < 6; pass++) {
+    const nextX = [...xs];
+    const nextY = [...ys];
+    for (let i = 2; i < xs.length - 2; i++) {
+      nextX[i] =
+        xs[i - 2] * 0.1 + xs[i - 1] * 0.25 + xs[i] * 0.3 + xs[i + 1] * 0.25 + xs[i + 2] * 0.1;
+      nextY[i] =
+        ys[i - 2] * 0.1 + ys[i - 1] * 0.25 + ys[i] * 0.3 + ys[i + 1] * 0.25 + ys[i + 2] * 0.1;
+    }
+    xs = nextX;
+    ys = nextY;
+  }
+
+  // 2. Vertical (h) 14-pass Gaussian smoothing so hills & crests are 100% silky smooth
   let heights = rawPoints.map((p) => p.h);
-  for (let pass = 0; pass < 8; pass++) {
+  for (let pass = 0; pass < 14; pass++) {
     const nextH = [...heights];
     for (let i = 2; i < heights.length - 2; i++) {
       nextH[i] =
@@ -194,16 +235,18 @@ export function buildTrackSpline(ControlPoints: TrackPoint[] = STAGE_CONTROL_POI
   let totalLength = 0;
 
   for (let i = 0; i < rawPoints.length; i++) {
-    const prev = rawPoints[Math.max(0, i - 1)];
-    const curr = rawPoints[i];
+    const prevX = xs[Math.max(0, i - 1)];
+    const prevY = ys[Math.max(0, i - 1)];
+    const currX = xs[i];
+    const currY = ys[i];
 
     if (i > 0) {
-      totalLength += Math.hypot(curr.x - prev.x, curr.y - prev.y);
+      totalLength += Math.hypot(currX - prevX, currY - prevY);
     }
 
     points.push({
-      x: curr.x,
-      y: curr.y,
+      x: currX,
+      y: currY,
       h: heights[i],
       angle: 0,
       pitch: 0,
@@ -215,8 +258,8 @@ export function buildTrackSpline(ControlPoints: TrackPoint[] = STAGE_CONTROL_POI
   }
 
   for (let i = 0; i < points.length; i++) {
-    const prev = points[Math.max(0, i - 2)];
-    const next = points[Math.min(points.length - 1, i + 2)];
+    const prev = points[Math.max(0, i - 3)];
+    const next = points[Math.min(points.length - 1, i + 3)];
     const dx = next.x - prev.x;
     const dy = next.y - prev.y;
     const ds = Math.max(0.001, Math.hypot(dx, dy));
@@ -245,21 +288,21 @@ export function buildTrackSpline(ControlPoints: TrackPoint[] = STAGE_CONTROL_POI
   const scenery: SceneryItem[] = [];
   const pineColors = ['#1f4d36', '#285e42', '#1b4332', '#2d6a4f'];
   const birchColors = ['#d98a2b', '#e6a635', '#c86428', '#869c38'];
-  const minClearance = ROAD_HALF_WIDTH + 46;
+  const minClearance = ROAD_HALF_WIDTH + 54;
 
-  for (let i = 4; i < points.length - 4; i += 3) {
+  for (let i = 6; i < points.length - 6; i += 6) {
     const pt = points[i];
-    const count = rand() > 0.35 ? 2 : 1;
+    const count = rand() > 0.45 ? 2 : 1;
 
     for (let c = 0; c < count; c++) {
       const side = rand() > 0.5 ? 1 : -1;
-      const offset = minClearance + 18 + rand() * 540;
+      const offset = minClearance + 22 + rand() * 520;
       const jitterAlong = (rand() - 0.5) * 65;
       const x = pt.x + pt.nx * side * offset + Math.cos(pt.angle) * jitterAlong;
       const y = pt.y + pt.ny * side * offset + Math.sin(pt.angle) * jitterAlong;
 
       let tooClose = false;
-      for (let j = 0; j < points.length; j += 5) {
+      for (let j = Math.max(0, i - 60); j < Math.min(points.length, i + 60); j += 4) {
         if (Math.hypot(x - points[j].x, y - points[j].y) < minClearance) {
           tooClose = true;
           break;
