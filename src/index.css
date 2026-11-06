@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@keyframes drunkSway {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(var(--sway-deg, 0deg)) scale(var(--sway-scale, 1));
+  }
+  75% {
+    transform: rotate(calc(var(--sway-deg, 0deg) * -1)) scale(var(--sway-scale, 1));
+  }
+}
+
+.drunk-view {
+  animation: drunkSway 3.2s ease-in-out infinite;
+}
