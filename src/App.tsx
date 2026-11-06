@@ -286,11 +286,12 @@ export function App() {
     if (!p.crashed && !p.tooGoodPause) return;
 
     const indexJump =
-      p.hitFriendsCrash || p.hitJakobCrash || p.hitLaureenCrash ? 10 : 0;
+      p.hitFriendsCrash || p.hitJakobCrash || p.hitLaureenCrash ? 14 : 0;
     const safeIdx = Math.min(track.points.length - 6, Math.max(2, p.trackIndex + indexJump));
     const centerPt = track.points[safeIdx];
 
     p.drunkLevel += p.hitLaureenCrash ? 2 : 1;
+    p.trackIndex = safeIdx;
     p.crashed = false;
     p.tooGoodPause = false;
     p.hitFriendsCrash = false;
@@ -739,16 +740,18 @@ export function App() {
       }
       p.speed = Math.max(reverseMax, Math.min(maxSpeed, p.speed));
 
-      // Gentler, smooth low-frequency drunk steering drift
+      // Stronger, multi-layered drunken steering weave & delayed reaction
       let steerInput = (p.keys.right ? 1 : 0) - (p.keys.left ? 1 : 0);
-      if (p.drunkLevel > 0 && Math.abs(p.speed) > 40) {
-        const wobbleAmp = Math.min(0.18, p.drunkLevel * 0.024);
+      if (p.drunkLevel > 0 && Math.abs(p.speed) > 25) {
+        const wobbleAmp = Math.min(0.52, p.drunkLevel * 0.068);
         steerInput +=
-          Math.sin(now * 0.002 + playerNum) * wobbleAmp +
-          Math.cos(now * 0.0013) * (wobbleAmp * 0.45);
+          Math.sin(now * 0.0028 + playerNum) * wobbleAmp +
+          Math.cos(now * 0.0046 + playerNum * 2.1) * (wobbleAmp * 0.55) +
+          Math.sin(now * 0.0014) * (wobbleAmp * 0.35);
       }
 
-      p.steerAngle += (steerInput - p.steerAngle) * (1 - Math.exp(-11 * dt));
+      const steerResp = Math.max(4.2, 11 - p.drunkLevel * 0.85);
+      p.steerAngle += (steerInput - p.steerAngle) * (1 - Math.exp(-steerResp * dt));
 
       const speedTurnFactor = Math.min(1, Math.abs(p.speed) / 135);
       const dirSign = p.speed >= -5 ? 1 : -1;
@@ -871,65 +874,70 @@ export function App() {
         }
       }
 
-      // Check collision with Nadim, Kert & Hans sitting on their bench
-      const distToFriends = Math.hypot(p.carX - friendsBench.x, p.carY - friendsBench.z);
-      if (!p.hitFriendsCrash && distToFriends < friendsBench.hitRadius) {
-        p.crashed = true;
-        p.hitFriendsCrash = true;
-        p.sabotaged = true;
-        // First ball wave rolls out ~2.5s after resuming, then every 20 seconds
-        p.sabotageTimerMs = 17500;
-        p.cleanDriveMs = 0;
-        p.speed = 0;
-        p.slipAngle = 0;
-        sound.playCrash();
-        if (playerNum === 1) {
-          setP1HitFriends(true);
-          setP1Crashed(true);
-        } else {
-          setP2HitFriends(true);
-          setP2Crashed(true);
+      // Check collision with any of the Nadim, Kert & Hans benches along the road
+      for (const spot of friendsBench.spots) {
+        if (Math.hypot(p.carX - spot.x, p.carY - spot.z) < spot.hitRadius) {
+          p.crashed = true;
+          p.hitFriendsCrash = true;
+          p.sabotaged = true;
+          p.sabotageTimerMs = 17500;
+          p.cleanDriveMs = 0;
+          p.speed = 0;
+          p.slipAngle = 0;
+          p.trackIndex = spot.trackIdx;
+          sound.playCrash();
+          if (playerNum === 1) {
+            setP1HitFriends(true);
+            setP1Crashed(true);
+          } else {
+            setP2HitFriends(true);
+            setP2Crashed(true);
+          }
+          return { speedNorm: 0, slipAmount: 0 };
         }
-        return { speedNorm: 0, slipAmount: 0 };
       }
 
-      // Check collision with Jakob on the roadside
-      const distToJakob = Math.hypot(p.carX - jakobSpot.x, p.carY - jakobSpot.z);
-      if (!p.hitJakobCrash && distToJakob < jakobSpot.hitRadius) {
-        p.crashed = true;
-        p.hitJakobCrash = true;
-        p.jakobSpeedEffect = true;
-        p.cleanDriveMs = 0;
-        p.speed = 0;
-        p.slipAngle = 0;
-        sound.playCrash();
-        if (playerNum === 1) {
-          setP1HitJakob(true);
-          setP1Crashed(true);
-        } else {
-          setP2HitJakob(true);
-          setP2Crashed(true);
+      // Check collision with any of the Jakob spots along the road
+      for (const spot of jakobSpot.spots) {
+        if (Math.hypot(p.carX - spot.x, p.carY - spot.z) < spot.hitRadius) {
+          p.crashed = true;
+          p.hitJakobCrash = true;
+          p.jakobSpeedEffect = true;
+          p.cleanDriveMs = 0;
+          p.speed = 0;
+          p.slipAngle = 0;
+          p.trackIndex = spot.trackIdx;
+          sound.playCrash();
+          if (playerNum === 1) {
+            setP1HitJakob(true);
+            setP1Crashed(true);
+          } else {
+            setP2HitJakob(true);
+            setP2Crashed(true);
+          }
+          return { speedNorm: 0, slipAmount: 0 };
         }
-        return { speedNorm: 0, slipAmount: 0 };
       }
 
-      // Check collision with Laureen on the roadside
-      const distToLaureen = Math.hypot(p.carX - laureenSpot.x, p.carY - laureenSpot.z);
-      if (!p.hitLaureenCrash && distToLaureen < laureenSpot.hitRadius) {
-        p.crashed = true;
-        p.hitLaureenCrash = true;
-        p.cleanDriveMs = 0;
-        p.speed = 0;
-        p.slipAngle = 0;
-        sound.playCrash();
-        if (playerNum === 1) {
-          setP1HitLaureen(true);
-          setP1Crashed(true);
-        } else {
-          setP2HitLaureen(true);
-          setP2Crashed(true);
+      // Check collision with any of the Laureen spots along the road
+      for (const spot of laureenSpot.spots) {
+        if (Math.hypot(p.carX - spot.x, p.carY - spot.z) < spot.hitRadius) {
+          p.crashed = true;
+          p.hitLaureenCrash = true;
+          p.cleanDriveMs = 0;
+          p.speed = 0;
+          p.slipAngle = 0;
+          p.trackIndex = spot.trackIdx;
+          sound.playCrash();
+          if (playerNum === 1) {
+            setP1HitLaureen(true);
+            setP1Crashed(true);
+          } else {
+            setP2HitLaureen(true);
+            setP2Crashed(true);
+          }
+          return { speedNorm: 0, slipAmount: 0 };
         }
-        return { speedNorm: 0, slipAmount: 0 };
       }
 
       // Check Finish Line
@@ -1026,14 +1034,25 @@ export function App() {
       let drunkAngleSway = 0;
       let drunkRoll = 0;
       let drunkPitchSway = 0;
+      let drunkFovOffset = 0;
 
       if (p.drunkLevel > 0) {
         drunkAngleSway =
-          Math.sin(now * 0.0015 + playerSeed) * Math.min(0.14, p.drunkLevel * 0.02);
+          Math.sin(now * 0.0022 + playerSeed) * Math.min(0.38, p.drunkLevel * 0.048) +
+          Math.cos(now * 0.0037 + playerSeed) * Math.min(0.18, p.drunkLevel * 0.022);
         drunkRoll =
-          Math.cos(now * 0.0017 + playerSeed) * Math.min(0.14, p.drunkLevel * 0.02);
+          Math.cos(now * 0.0025 + playerSeed) * Math.min(0.36, p.drunkLevel * 0.045) +
+          Math.sin(now * 0.0041 + playerSeed) * Math.min(0.14, p.drunkLevel * 0.018);
         drunkPitchSway =
-          Math.sin(now * 0.0019 + playerSeed) * Math.min(8, p.drunkLevel * 1.2);
+          Math.sin(now * 0.0029 + playerSeed) * Math.min(22, p.drunkLevel * 2.8);
+        drunkFovOffset =
+          Math.sin(now * 0.0033 + playerSeed) * Math.min(14, p.drunkLevel * 2.4);
+      }
+
+      const targetFov = 50 + drunkFovOffset;
+      if (Math.abs(cam.fov - targetFov) > 0.05) {
+        cam.fov = targetFov;
+        cam.updateProjectionMatrix();
       }
 
       const effectiveCamAngle = p.camAngle + drunkAngleSway;
@@ -1236,9 +1255,13 @@ export function App() {
     };
   }, [screen, mode, p1Car, p2Car, track]);
 
-  // Gentler optical blur (0.45px per drink, capped at 3.2px) without transforming the WebGL canvas
-  const p1BlurPx = p1Drunk > 0 ? Math.min(3.2, p1Drunk * 0.45) : 0;
-  const p2BlurPx = p2Drunk > 0 ? Math.min(3.2, p2Drunk * 0.45) : 0;
+  // Intense drunk optical blur, saturation & vignette without transforming the WebGL canvas
+  const p1BlurPx = p1Drunk > 0 ? Math.min(5.8, p1Drunk * 0.85) : 0;
+  const p2BlurPx = p2Drunk > 0 ? Math.min(5.8, p2Drunk * 0.85) : 0;
+  const p1Saturate = 1 + Math.min(1.4, p1Drunk * 0.22);
+  const p2Saturate = 1 + Math.min(1.4, p2Drunk * 0.22);
+  const p1HueDeg = Math.min(36, p1Drunk * 5);
+  const p2HueDeg = Math.min(36, p2Drunk * 5);
 
   const p1CarOption = CAR_OPTIONS.find((c) => c.id === p1Car)!;
   const p2CarOption = CAR_OPTIONS.find((c) => c.id === p2Car)!;
@@ -1251,18 +1274,19 @@ export function App() {
       {/* 3D WebGL Canvas Mount — zero CSS filter/transform on the canvas itself for 60fps smoothness */}
       <div ref={mountRef} className="w-full h-full" />
 
-      {/* SINGLEPLAYER GENTLE OPTICAL BLUR OVERLAY */}
+      {/* SINGLEPLAYER DRUNK OPTICAL BLUR, HAZE & VIGNETTE OVERLAY */}
       {(screen === 'racing' || screen === 'finished') && mode === 'time_attack' && p1BlurPx > 0 && (
         <div
           className="pointer-events-none fixed inset-0"
           style={{
-            backdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
-            WebkitBackdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
+            backdropFilter: `blur(${p1BlurPx.toFixed(2)}px) saturate(${p1Saturate.toFixed(2)}) hue-rotate(${p1HueDeg}deg)`,
+            WebkitBackdropFilter: `blur(${p1BlurPx.toFixed(2)}px) saturate(${p1Saturate.toFixed(2)}) hue-rotate(${p1HueDeg}deg)`,
+            background: `radial-gradient(circle, rgba(251,191,36,0) 42%, rgba(225,29,72,${Math.min(0.42, p1Drunk * 0.065).toFixed(2)}) 100%)`,
           }}
         />
       )}
 
-      {/* SPLIT-SCREEN OPTICAL BLUR OVERLAYS & CENTER DIVIDER */}
+      {/* SPLIT-SCREEN DRUNK OPTICAL BLUR OVERLAYS & CENTER DIVIDER */}
       {(screen === 'racing' || screen === 'finished') && mode === 'split_screen' && (
         <>
           {/* Left Player 1 Drunk Blur Layer */}
@@ -1270,8 +1294,9 @@ export function App() {
             <div
               className="pointer-events-none fixed top-0 bottom-0 left-0 w-1/2"
               style={{
-                backdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
-                WebkitBackdropFilter: `blur(${p1BlurPx.toFixed(2)}px)`,
+                backdropFilter: `blur(${p1BlurPx.toFixed(2)}px) saturate(${p1Saturate.toFixed(2)}) hue-rotate(${p1HueDeg}deg)`,
+                WebkitBackdropFilter: `blur(${p1BlurPx.toFixed(2)}px) saturate(${p1Saturate.toFixed(2)}) hue-rotate(${p1HueDeg}deg)`,
+                background: `radial-gradient(circle, rgba(251,191,36,0) 42%, rgba(225,29,72,${Math.min(0.42, p1Drunk * 0.065).toFixed(2)}) 100%)`,
               }}
             />
           )}
@@ -1281,8 +1306,9 @@ export function App() {
             <div
               className="pointer-events-none fixed top-0 bottom-0 right-0 w-1/2"
               style={{
-                backdropFilter: `blur(${p2BlurPx.toFixed(2)}px)`,
-                WebkitBackdropFilter: `blur(${p2BlurPx.toFixed(2)}px)`,
+                backdropFilter: `blur(${p2BlurPx.toFixed(2)}px) saturate(${p2Saturate.toFixed(2)}) hue-rotate(${p2HueDeg}deg)`,
+                WebkitBackdropFilter: `blur(${p2BlurPx.toFixed(2)}px) saturate(${p2Saturate.toFixed(2)}) hue-rotate(${p2HueDeg}deg)`,
+                background: `radial-gradient(circle, rgba(251,191,36,0) 42%, rgba(225,29,72,${Math.min(0.42, p2Drunk * 0.065).toFixed(2)}) 100%)`,
               }}
             />
           )}

@@ -410,130 +410,120 @@ export function buildHillyTerrainMesh(points: SplinePoint[]): THREE.Mesh {
   return mesh;
 }
 
-export interface FriendsBenchInfo {
-  group: THREE.Group;
+export interface ObstacleSpot {
   x: number;
   y: number;
   z: number;
   hitRadius: number;
+  trackIdx: number;
+}
+
+export interface FriendsBenchInfo {
+  group: THREE.Group;
+  spots: ObstacleSpot[];
 }
 
 /**
- * Places Nadim, Kert and Hans sitting on a wooden bench right by the roadside watching the rally.
+ * Places Nadim, Kert and Hans sitting on wooden benches at multiple spots along the track,
+ * positioned closer to the middle of the road so the player has to dodge them!
  * Uses the exact uploaded photo without modifying it.
  */
 export function buildFriendsBench(points: SplinePoint[], imageUrl: string): FriendsBenchInfo {
-  const spotIdx = Math.min(points.length - 20, 92);
-  const pt = points[spotIdx];
-  // Place on the right roadside shoulder so normal driving on the road never clips them
-  const side = -1;
-  const offset = ROAD_HALF_WIDTH + 22;
-  const bx = pt.x + pt.nx * side * offset;
-  const bz = pt.y + pt.ny * side * offset;
-  const by = pt.h;
+  const parentGroup = new THREE.Group();
+  const spots: ObstacleSpot[] = [];
 
-  const group = new THREE.Group();
-  group.position.set(bx, by, bz);
-
-  // Angle the bench toward the approaching cars so the players see Nadim, Kert & Hans head-on
-  const lookAtPt = points[Math.max(0, spotIdx - 22)];
-  const faceAngle = Math.atan2(lookAtPt.x - bx, lookAtPt.y - bz);
-  group.rotation.y = faceAngle;
+  const tex = new THREE.TextureLoader().load(imageUrl);
+  tex.colorSpace = THREE.SRGBColorSpace;
 
   const woodMat = new THREE.MeshLambertMaterial({ color: 0x7c4a21 });
   const darkWoodMat = new THREE.MeshLambertMaterial({ color: 0x4a2c11 });
   const legMat = new THREE.MeshLambertMaterial({ color: 0x27272a });
-
-  // Wooden bench seat plank
-  const seatGeo = new THREE.BoxGeometry(66, 3.5, 22);
-  const seatMesh = new THREE.Mesh(seatGeo, woodMat);
-  seatMesh.position.set(0, 17, 0);
-  seatMesh.castShadow = true;
-  seatMesh.receiveShadow = true;
-  group.add(seatMesh);
-
-  // Bench backrest planks
-  const backGeo = new THREE.BoxGeometry(66, 15, 3);
-  const backMesh = new THREE.Mesh(backGeo, darkWoodMat);
-  backMesh.position.set(0, 29, -9.5);
-  backMesh.castShadow = true;
-  group.add(backMesh);
-
-  // Bench legs & armrests
-  const legGeo = new THREE.BoxGeometry(4.5, 17, 20);
-  for (const lx of [-27, 0, 27]) {
-    const leg = new THREE.Mesh(legGeo, legMat);
-    leg.position.set(lx, 8.5, 0);
-    leg.castShadow = true;
-    group.add(leg);
-  }
-
-  const armGeo = new THREE.BoxGeometry(4.5, 9, 22);
-  for (const ax of [-31, 31]) {
-    const arm = new THREE.Mesh(armGeo, darkWoodMat);
-    arm.position.set(ax, 22, 0);
-    arm.castShadow = true;
-    group.add(arm);
-  }
-
-  // Exact photo of Nadim, Kert & Hans sitting on the bench
-  const tex = new THREE.TextureLoader().load(imageUrl);
-  tex.colorSpace = THREE.SRGBColorSpace;
-
-  const photoWidth = 60;
-  const photoHeight = 58;
-  const photoGeo = new THREE.PlaneGeometry(photoWidth, photoHeight);
   const photoMat = new THREE.MeshBasicMaterial({
     map: tex,
     side: THREE.DoubleSide,
   });
-  const photoMesh = new THREE.Mesh(photoGeo, photoMat);
-  photoMesh.position.set(0, photoHeight / 2 + 1, 2.5);
-  group.add(photoMesh);
+
+  const seatGeo = new THREE.BoxGeometry(66, 3.5, 22);
+  const backGeo = new THREE.BoxGeometry(66, 15, 3);
+  const legGeo = new THREE.BoxGeometry(4.5, 17, 20);
+  const armGeo = new THREE.BoxGeometry(4.5, 9, 22);
+  const photoWidth = 60;
+  const photoHeight = 58;
+  const photoGeo = new THREE.PlaneGeometry(photoWidth, photoHeight);
+
+  // Frequent spots along the stage, placed near the middle of the road
+  const indices = [48, 162, 276, 390, 504, 618];
+  const centerOffsets = [-18, 22, -8, 26, -22, 12];
+
+  indices.forEach((rawIdx, i) => {
+    const spotIdx = Math.min(points.length - 25, rawIdx);
+    if (spotIdx < 20) return;
+    const pt = points[spotIdx];
+    const offset = centerOffsets[i % centerOffsets.length];
+    const bx = pt.x + pt.nx * offset;
+    const bz = pt.y + pt.ny * offset;
+    const by = pt.h;
+
+    const group = new THREE.Group();
+    group.position.set(bx, by, bz);
+
+    const lookAtPt = points[Math.max(0, spotIdx - 18)];
+    const faceAngle = Math.atan2(lookAtPt.x - bx, lookAtPt.y - bz);
+    group.rotation.y = faceAngle;
+
+    const seatMesh = new THREE.Mesh(seatGeo, woodMat);
+    seatMesh.position.set(0, 17, 0);
+    group.add(seatMesh);
+
+    const backMesh = new THREE.Mesh(backGeo, darkWoodMat);
+    backMesh.position.set(0, 29, -9.5);
+    group.add(backMesh);
+
+    for (const lx of [-27, 0, 27]) {
+      const leg = new THREE.Mesh(legGeo, legMat);
+      leg.position.set(lx, 8.5, 0);
+      group.add(leg);
+    }
+
+    for (const ax of [-31, 31]) {
+      const arm = new THREE.Mesh(armGeo, darkWoodMat);
+      arm.position.set(ax, 22, 0);
+      group.add(arm);
+    }
+
+    const photoMesh = new THREE.Mesh(photoGeo, photoMat);
+    photoMesh.position.set(0, photoHeight / 2 + 1, 2.5);
+    group.add(photoMesh);
+
+    parentGroup.add(group);
+    spots.push({
+      x: bx,
+      y: by,
+      z: bz,
+      hitRadius: 34,
+      trackIdx: spotIdx,
+    });
+  });
 
   return {
-    group,
-    x: bx,
-    y: by,
-    z: bz,
-    hitRadius: 42,
+    group: parentGroup,
+    spots,
   };
 }
 
 /**
- * Places Jakob at a separate roadside spot further down the track (around index 225).
+ * Places Jakob at multiple spots along the track near the middle of the road.
  * Uses the exact uploaded photo without modifying it.
  */
 export function buildJakobSpot(points: SplinePoint[], imageUrl: string): FriendsBenchInfo {
-  const spotIdx = Math.min(points.length - 20, 225);
-  const pt = points[spotIdx];
-  const side = 1;
-  const offset = ROAD_HALF_WIDTH + 22;
-  const jx = pt.x + pt.nx * side * offset;
-  const jz = pt.y + pt.ny * side * offset;
-  const jy = pt.h;
-
-  const group = new THREE.Group();
-  group.position.set(jx, jy, jz);
-
-  const lookAtPt = points[Math.max(0, spotIdx - 22)];
-  const faceAngle = Math.atan2(lookAtPt.x - jx, lookAtPt.y - jz);
-  group.rotation.y = faceAngle;
-
-  // Low wooden roadside pallet/cot under Jakob
-  const matGeo = new THREE.BoxGeometry(82, 4, 28);
-  const matMesh = new THREE.Mesh(
-    matGeo,
-    new THREE.MeshLambertMaterial({ color: 0x6b4423 })
-  );
-  matMesh.position.set(0, 2, 0);
-  matMesh.castShadow = true;
-  matMesh.receiveShadow = true;
-  group.add(matMesh);
+  const parentGroup = new THREE.Group();
+  const spots: ObstacleSpot[] = [];
 
   const tex = new THREE.TextureLoader().load(imageUrl);
   tex.colorSpace = THREE.SRGBColorSpace;
 
+  const matGeo = new THREE.BoxGeometry(82, 4, 28);
+  const matMaterial = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
   const photoWidth = 78;
   const photoHeight = 36;
   const photoGeo = new THREE.PlaneGeometry(photoWidth, photoHeight);
@@ -541,53 +531,63 @@ export function buildJakobSpot(points: SplinePoint[], imageUrl: string): Friends
     map: tex,
     side: THREE.DoubleSide,
   });
-  const photoMesh = new THREE.Mesh(photoGeo, photoMat);
-  photoMesh.position.set(0, photoHeight / 2 + 4, 2);
-  group.add(photoMesh);
+
+  const indices = [86, 200, 314, 428, 542, 648];
+  const centerOffsets = [20, -24, 14, -18, 28, -12];
+
+  indices.forEach((rawIdx, i) => {
+    const spotIdx = Math.min(points.length - 25, rawIdx);
+    if (spotIdx < 20) return;
+    const pt = points[spotIdx];
+    const offset = centerOffsets[i % centerOffsets.length];
+    const jx = pt.x + pt.nx * offset;
+    const jz = pt.y + pt.ny * offset;
+    const jy = pt.h;
+
+    const group = new THREE.Group();
+    group.position.set(jx, jy, jz);
+
+    const lookAtPt = points[Math.max(0, spotIdx - 18)];
+    const faceAngle = Math.atan2(lookAtPt.x - jx, lookAtPt.y - jz);
+    group.rotation.y = faceAngle;
+
+    const matMesh = new THREE.Mesh(matGeo, matMaterial);
+    matMesh.position.set(0, 2, 0);
+    group.add(matMesh);
+
+    const photoMesh = new THREE.Mesh(photoGeo, photoMat);
+    photoMesh.position.set(0, photoHeight / 2 + 4, 2);
+    group.add(photoMesh);
+
+    parentGroup.add(group);
+    spots.push({
+      x: jx,
+      y: jy,
+      z: jz,
+      hitRadius: 36,
+      trackIdx: spotIdx,
+    });
+  });
 
   return {
-    group,
-    x: jx,
-    y: jy,
-    z: jz,
-    hitRadius: 42,
+    group: parentGroup,
+    spots,
   };
 }
 
 /**
- * Places Laureen at a separate roadside spot further down the track (around index 355).
+ * Places Laureen at multiple spots along the track near the middle of the road.
  * Uses the exact uploaded photo without modifying it.
  */
 export function buildLaureenSpot(points: SplinePoint[], imageUrl: string): FriendsBenchInfo {
-  const spotIdx = Math.min(points.length - 20, 355);
-  const pt = points[spotIdx];
-  const side = -1;
-  const offset = ROAD_HALF_WIDTH + 22;
-  const lx = pt.x + pt.nx * side * offset;
-  const lz = pt.y + pt.ny * side * offset;
-  const ly = pt.h;
-
-  const group = new THREE.Group();
-  group.position.set(lx, ly, lz);
-
-  const lookAtPt = points[Math.max(0, spotIdx - 22)];
-  const faceAngle = Math.atan2(lookAtPt.x - lx, lookAtPt.y - lz);
-  group.rotation.y = faceAngle;
-
-  // Small wooden roadside platform under Laureen
-  const standGeo = new THREE.BoxGeometry(42, 4, 24);
-  const standMesh = new THREE.Mesh(
-    standGeo,
-    new THREE.MeshLambertMaterial({ color: 0x7c4a21 })
-  );
-  standMesh.position.set(0, 2, 0);
-  standMesh.castShadow = true;
-  standMesh.receiveShadow = true;
-  group.add(standMesh);
+  const parentGroup = new THREE.Group();
+  const spots: ObstacleSpot[] = [];
 
   const tex = new THREE.TextureLoader().load(imageUrl);
   tex.colorSpace = THREE.SRGBColorSpace;
 
+  const standGeo = new THREE.BoxGeometry(42, 4, 24);
+  const standMat = new THREE.MeshLambertMaterial({ color: 0x7c4a21 });
   const photoWidth = 36;
   const photoHeight = 74;
   const photoGeo = new THREE.PlaneGeometry(photoWidth, photoHeight);
@@ -595,16 +595,47 @@ export function buildLaureenSpot(points: SplinePoint[], imageUrl: string): Frien
     map: tex,
     side: THREE.DoubleSide,
   });
-  const photoMesh = new THREE.Mesh(photoGeo, photoMat);
-  photoMesh.position.set(0, photoHeight / 2 + 4, 2);
-  group.add(photoMesh);
+
+  const indices = [124, 238, 352, 466, 580];
+  const centerOffsets = [-12, 18, -24, 10, -16];
+
+  indices.forEach((rawIdx, i) => {
+    const spotIdx = Math.min(points.length - 25, rawIdx);
+    if (spotIdx < 20) return;
+    const pt = points[spotIdx];
+    const offset = centerOffsets[i % centerOffsets.length];
+    const lx = pt.x + pt.nx * offset;
+    const lz = pt.y + pt.ny * offset;
+    const ly = pt.h;
+
+    const group = new THREE.Group();
+    group.position.set(lx, ly, lz);
+
+    const lookAtPt = points[Math.max(0, spotIdx - 18)];
+    const faceAngle = Math.atan2(lookAtPt.x - lx, lookAtPt.y - lz);
+    group.rotation.y = faceAngle;
+
+    const standMesh = new THREE.Mesh(standGeo, standMat);
+    standMesh.position.set(0, 2, 0);
+    group.add(standMesh);
+
+    const photoMesh = new THREE.Mesh(photoGeo, photoMat);
+    photoMesh.position.set(0, photoHeight / 2 + 4, 2);
+    group.add(photoMesh);
+
+    parentGroup.add(group);
+    spots.push({
+      x: lx,
+      y: ly,
+      z: lz,
+      hitRadius: 28,
+      trackIdx: spotIdx,
+    });
+  });
 
   return {
-    group,
-    x: lx,
-    y: ly,
-    z: lz,
-    hitRadius: 42,
+    group: parentGroup,
+    spots,
   };
 }
 

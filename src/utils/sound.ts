@@ -1,3 +1,35 @@
+interface YTPlayer {
+  playVideo: () => void;
+  pauseVideo: () => void;
+  mute: () => void;
+  unMute: () => void;
+  setVolume: (vol: number) => void;
+  getPlayerState: () => number;
+}
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (
+        el: string | HTMLElement,
+        opts: {
+          height?: string | number;
+          width?: string | number;
+          videoId: string;
+          playerVars?: Record<string, string | number>;
+          events?: {
+            onReady?: (e: { target: YTPlayer }) => void;
+            onStateChange?: (e: { data: number; target: YTPlayer }) => void;
+          };
+        }
+      ) => YTPlayer;
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+const PUNANE_SKODA_YT_ID = 'TbZWGIQkYyo'; // KräkiKevin - Punane Skoda (Prod. W1CKED)
+
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private engineOsc: OscillatorNode | null = null;
@@ -7,13 +39,109 @@ class SoundEngine {
   private muted: boolean = false;
   private initialized: boolean = false;
 
-  // Background music ("Kräki Kevin - Punane Škoda" synth track + optional custom MP3 override)
+  // Background music ("KräkiKevin - Punane Skoda" YouTube Player + Web Audio fallback + optional MP3 override)
   private bgmTimer: number | null = null;
   private bgmStep: number = 0;
   private customAudio: HTMLAudioElement | null = null;
   private usingCustomAudio: boolean = false;
+  private ytPlayer: YTPlayer | null = null;
+  private ytReady: boolean = false;
+  private ytPlaying: boolean = false;
+  private userInteracted: boolean = false;
+
+  constructor() {
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      this.setupYouTubePlayer();
+    }
+  }
+
+  private setupYouTubePlayer() {
+    const initPlayer = () => {
+      if (!window.YT || !window.YT.Player || this.ytPlayer) return;
+      let container = document.getElementById('yt-bgm-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'yt-bgm-container';
+        container.style.position = 'fixed';
+        container.style.width = '1px';
+        container.style.height = '1px';
+        container.style.bottom = '0';
+        container.style.right = '0';
+        container.style.opacity = '0.01';
+        container.style.pointerEvents = 'none';
+        container.style.zIndex = '-1';
+        document.body.appendChild(container);
+      }
+      const playerEl = document.createElement('div');
+      container.appendChild(playerEl);
+
+      this.ytPlayer = new window.YT.Player(playerEl, {
+        width: 200,
+        height: 113,
+        videoId: PUNANE_SKODA_YT_ID,
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          loop: 1,
+          playlist: PUNANE_SKODA_YT_ID,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0,
+          origin: window.location.origin,
+        },
+        events: {
+          onReady: (e) => {
+            this.ytReady = true;
+            e.target.setVolume(65);
+            if (this.userInteracted && !this.muted && !this.usingCustomAudio) {
+              e.target.unMute();
+              e.target.playVideo();
+            }
+          },
+          onStateChange: (e) => {
+            // 1 = PLAYING, 0 = ENDED
+            if (e.data === 1) {
+              this.ytPlaying = true;
+            } else if (e.data === 0) {
+              e.target.playVideo();
+            } else if (e.data === 2 || e.data === -1) {
+              this.ytPlaying = false;
+            }
+          },
+        },
+      });
+    };
+
+    if (window.YT && window.YT.Player) {
+      initPlayer();
+    } else {
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (prev) prev();
+        initPlayer();
+      };
+      if (!document.getElementById('yt-iframe-api-script')) {
+        const tag = document.createElement('script');
+        tag.id = 'yt-iframe-api-script';
+        tag.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(tag);
+      }
+    }
+  }
 
   public init() {
+    this.userInteracted = true;
+    if (this.ytReady && this.ytPlayer && !this.muted && !this.usingCustomAudio) {
+      try {
+        this.ytPlayer.unMute();
+        this.ytPlayer.setVolume(65);
+        this.ytPlayer.playVideo();
+      } catch {
+        // Ignore
+      }
+    }
     if (this.initialized) {
       if (this.ctx && this.ctx.state === 'suspended') {
         this.ctx.resume().catch(() => {});
@@ -91,6 +219,13 @@ class SoundEngine {
     if (this.customAudio) {
       this.customAudio.pause();
     }
+    if (this.ytReady && this.ytPlayer) {
+      try {
+        this.ytPlayer.pauseVideo();
+      } catch {
+        // Ignore
+      }
+    }
     const audio = new Audio(url);
     audio.loop = true;
     audio.volume = 0.55;
@@ -103,10 +238,10 @@ class SoundEngine {
 
   private startBackgroundMusic() {
     if (this.bgmTimer !== null) return;
-    // 140 BPM energetic rally-house / euro-rave beat ("Punane Škoda" vibe)
+    // 140 BPM energetic rally-house / euro-rave beat ("Punane Škoda" fallback when YT player is not active)
     const stepMs = (60 / 140 / 4) * 1000; // 16th note ~ 107ms
     this.bgmTimer = window.setInterval(() => {
-      if (this.muted || !this.ctx || this.usingCustomAudio) return;
+      if (this.muted || !this.ctx || this.usingCustomAudio || this.ytPlaying) return;
       if (this.ctx.state === 'suspended') return;
 
       const s = this.bgmStep % 32;
@@ -197,8 +332,26 @@ class SoundEngine {
       if (this.customAudio) {
         this.customAudio.pause();
       }
-    } else if (this.usingCustomAudio && this.customAudio) {
-      this.customAudio.play().catch(() => {});
+      if (this.ytReady && this.ytPlayer) {
+        try {
+          this.ytPlayer.mute();
+          this.ytPlayer.pauseVideo();
+        } catch {
+          // Ignore
+        }
+      }
+    } else {
+      if (this.usingCustomAudio && this.customAudio) {
+        this.customAudio.play().catch(() => {});
+      } else if (this.ytReady && this.ytPlayer && this.userInteracted) {
+        try {
+          this.ytPlayer.unMute();
+          this.ytPlayer.setVolume(65);
+          this.ytPlayer.playVideo();
+        } catch {
+          // Ignore
+        }
+      }
     }
   }
 
